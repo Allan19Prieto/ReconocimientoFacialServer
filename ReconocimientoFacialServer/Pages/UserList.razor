@@ -1,0 +1,86 @@
+﻿@page "/user-list"
+@using ReconocimientoFacialServer.Data
+@using ReconocimientoFacialServer.Models
+@using System.Data.SQLite;
+@inject DatabaseHandler DatabaseHandler
+
+
+<h3>Lista de Usuarios</h3>
+
+@if (Users == null)
+{
+    <p>Cargando usuarios...</p>
+}
+else if (Users.Count == 0)
+{
+    <p>No se han registrado usuarios.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Apellido</th>
+                <th>Email</th>
+                <th>Imagen</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in Users)
+            {
+                <tr>
+                    <td>@user.Name</td>
+                    <td>@user.LastName</td>
+                    <td>@user.Email</td>
+                    <td>
+                        @if (user.Image != null)
+                        {
+                            <img src="data:image/png;base64,@Convert.ToBase64String(user.Image)" alt="Imagen de Usuario" width="100" />
+                        }
+                        else
+                        {
+                            <span>Sin imagen</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+
+    private List<UserModel> Users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        Users = new List<UserModel>();
+
+        using var connection = DatabaseHandler.GetConnection();
+        await connection.OpenAsync();
+
+        string query = "SELECT UserId, Name, LastName, Email, Image FROM Users";
+        using var command = new SQLiteCommand(query, connection);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            Users.Add(new UserModel
+                {
+                    UserId = reader.GetInt32(0),
+                    Name = reader.GetString(1),
+                    LastName = reader.GetString(2),
+                    Email = reader.GetString(3),
+                    Image = reader["Image"] as byte[]
+                });
+        }
+    }
+
+}

@@ -1,0 +1,46 @@
+﻿@page "/register"
+@using ReconocimientoFacialServer.Data
+@using ReconocimientoFacialServer.Models
+@using System.Data.SQLite;
+@inject DatabaseHandler DatabaseHandler
+
+<h3>Registrar Usuario</h3>
+
+<div>
+    <label>Nombre:</label>
+    <input @bind="User.Name" />
+</div>
+<div>
+    <label>Apellido:</label>
+    <input @bind="User.LastName" />
+</div>
+<div>
+    <label>Email:</label>
+    <input @bind="User.Email" />
+</div>
+<button @onclick="RegisterUsers">Guardar</button>
+
+@code {
+
+    private UserModel User = new();
+
+    private async Task RegisterUsers()
+    {
+        using var connection = DatabaseHandler.GetConnection();
+        await connection.OpenAsync();
+
+        string query = "INSERT INTO Users (Name, LastName, Email, RegisteredDate) VALUES (@Name, @LastName, @Email, @RegisteredDate)";
+        using var command = new SQLiteCommand(query, connection);
+
+        command.Parameters.AddWithValue("@Name", User.Name);
+        command.Parameters.AddWithValue("@LastName", User.LastName);
+        command.Parameters.AddWithValue("@Email", User.Email);
+        command.Parameters.AddWithValue("@RegisteredDate", User.RegisteredDate);
+
+        await command.ExecuteNonQueryAsync();
+
+        // Reiniciar el formulario
+        User = new UserModel();
+    }
+
+}

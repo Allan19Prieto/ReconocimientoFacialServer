@@ -1,0 +1,60 @@
+﻿@page "/train"
+@using ReconocimientoFacialServer.Data
+@using ReconocimientoFacialServer.Models
+@using ReconocimientoFacialServer.Services
+@using System.Data.SQLite;
+@using System.Drawing;
+@using Emgu.CV
+@using Emgu.CV.Structure
+@inject DatabaseHandler DatabaseHandler
+@inject NavigationManager NavigationManager
+@inject FaceRecognizerService FaceRecognizerService
+
+<h3>Entrenar Reconocedor</h3>
+
+<button @onclick="TrainRecognizerr">Entrenar</button>
+
+<p>@StatusMessage</p>
+
+@code {
+    private string StatusMessage;
+
+    private async Task TrainRecognizerr()
+    {
+        try
+        {
+            var trainingImagesBase64 = new Dictionary<int, string>();
+            var labels = new Dictionary<int, string>();
+
+            using var connection = DatabaseHandler.GetConnection();
+            await connection.OpenAsync();
+
+            string query = "SELECT UserId, Image FROM Users WHERE Image IS NOT NULL";
+            using var command = new SQLiteCommand(query, connection);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var userId = reader.GetInt32(0);
+                var imageBytes = (byte[])reader["Image"];
+
+                // Convertir byte[] a Base64
+                string base64Image = Convert.ToBase64String(imageBytes);
+
+                trainingImagesBase64[userId] = base64Image;
+                labels[userId] = $"Usuario {userId}";
+            }
+
+            // Llamar al método TrainRecognizer con imágenes en Base64
+            FaceRecognizerService.TrainRecognizer(trainingImagesBase64, labels);
+
+            StatusMessage = "Modelo entrenado correctamente.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error durante el entrenamiento: {ex.Message}";
+        }
+    }
+
+
+}

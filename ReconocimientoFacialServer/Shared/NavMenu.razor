@@ -1,0 +1,32 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">ReconocimientoFacialServer</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav>
+        <ul>
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/register">Registrar Usuario</a></li>
+            <li><a href="/register-camera">Registrar Usuario con Cámara</a></li>
+            <li><a href="/user-list">Lista de los Usuarios</a></li>
+            <li><a href="/train">Entrenar</a></li>
+
+        </ul>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

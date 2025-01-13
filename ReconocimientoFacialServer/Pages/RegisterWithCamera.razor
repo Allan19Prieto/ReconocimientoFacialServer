@@ -1,0 +1,161 @@
+﻿@page "/register-camera"
+@using ReconocimientoFacialServer.Data
+@using ReconocimientoFacialServer.Models
+@using System.Data.SQLite;
+@using System.Drawing;
+@using ReconocimientoFacialServer.Services
+@inject DatabaseHandler DatabaseHandler
+@inject FaceRecognizerService FaceRecognizerService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+@using System.Drawing.Imaging;
+@using System.IO;
+
+<h3>Registrar Usuario con Cámara</h3>
+
+<div>
+    <label>Nombre:</label>
+    <input @bind="User.Name" />
+</div>
+<div>
+    <label>Apellido:</label>
+    <input @bind="User.LastName" />
+</div>
+<div>
+    <label>Email:</label>
+    <input @bind="User.Email" />
+</div>
+
+<div>
+    <video id="videoElement" autoplay style="border: 1px solid black; width: 320px; height: 240px;"></video>
+    <canvas id="canvasElement" style="display: none;" width="320" height="240"></canvas>
+    <img src="@CapturedImage" alt="Imagen Capturada" />
+</div>
+
+@if (!string.IsNullOrWhiteSpace(CapturedImage))
+{
+    <p style="color: green;">Imagen capturada correctamente.</p>
+}
+else
+{
+    <p style="color: red;">Aún no se ha capturado ninguna imagen.</p>
+}
+
+<button @onclick="StartCamera">Iniciar Cámara</button>
+<button @onclick="CaptureImage">Capturar Imagen</button>
+<button @onclick="RegisterUser">Guardar Usuario</button>
+
+<button @onclick="RecognizeFace">Reconocer Rostro</button>
+<p>@RecognitionResult</p>
+
+@code {
+
+    private UserModel User = new();
+    private string CapturedImage;
+    private string RecognitionResult;
+
+    private async Task StartCamera()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("startCamera", "videoElement");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al iniciar la cámara: {ex.Message}");
+        }
+    }
+
+    private async Task CaptureImage()
+    {
+        try
+        {
+            CapturedImage = await JSRuntime.InvokeAsync<string>("captureImage", "videoElement", "canvasElement");
+            
+            if (!string.IsNullOrWhiteSpace(CapturedImage))
+            {
+                Console.WriteLine("Imagen capturada correctamente.");
+            }
+            else
+            {
+                Console.WriteLine("La imagen capturada está vacía.");
+            }
+    }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al capturar la imagen: {ex.Message}");
+        }
+    }
+
+    private async Task RegisterUser()
+    {
+        if (string.IsNullOrWhiteSpace(CapturedImage))
+        {
+            Console.WriteLine("Debe capturar una imagen antes de guardar.");
+            return;
+        }
+
+        // Convertir la imagen base64 a un byte array
+        byte[] imageBytes = Convert.FromBase64String(CapturedImage.Replace("data:image/png;base64,", ""));
+
+        // Guardar en la base de datos
+        using var connection = DatabaseHandler.GetConnection();
+        await connection.OpenAsync();
+
+        string query = @"
+            INSERT INTO Users (Name, LastName, Email, RegisteredDate, Image)
+            VALUES (@Name, @LastName, @Email, @RegisteredDate, @Image)";
+        using var command = new SQLiteCommand(query, connection);
+
+        command.Parameters.AddWithValue("@Name", User.Name);
+        command.Parameters.AddWithValue("@LastName", User.LastName);
+        command.Parameters.AddWithValue("@Email", User.Email);
+        command.Parameters.AddWithValue("@RegisteredDate", User.RegisteredDate);
+        command.Parameters.AddWithValue("@Image", imageBytes);
+
+        await command.ExecuteNonQueryAsync();
+
+        // Reinicia el formulario
+        User = new UserModel();
+        CapturedImage = null;
+
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task RecognizeFace()
+    {
+        if (string.IsNullOrWhiteSpace(CapturedImage))
+        {
+            RecognitionResult = "Debe capturar una imagen primero.";
+            return;
+        }
+
+        try
+        {
+            // CapturedImage ya está en formato Base64
+            string base64Image = CapturedImage;
+
+            // Procesar la imagen Base64
+            var processedImage = FaceRecognizerService.PreprocessImage(base64Image);
+
+            // Realizar el reconocimiento facial
+            RecognitionResult = FaceRecognizerService.RecognizeFace(processedImage);
+        }
+        catch (Exception ex)
+        {
+            RecognitionResult = $"Error al reconocer el rostro: {ex.Message}";
+        }
+    }
+
+    public static string ConvertBitmapToBase64(Bitmap bitmap)
+    {
+        using (var ms = new MemoryStream())
+        {
+            bitmap.Save(ms, ImageFormat.Png); // Guardar el Bitmap en formato PNG
+            byte[] imageBytes = ms.ToArray(); // Convertir el flujo a byte[]
+            return $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}"; // Retornar Base64
+        }
+    }
+
+}
