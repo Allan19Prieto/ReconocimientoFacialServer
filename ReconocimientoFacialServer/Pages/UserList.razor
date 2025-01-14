@@ -20,6 +20,7 @@ else
     <table>
         <thead>
             <tr>
+                <th>Id</th>
                 <th>Nombre</th>
                 <th>Apellido</th>
                 <th>Email</th>
@@ -30,6 +31,7 @@ else
             @foreach (var user in Users)
             {
                 <tr>
+                    <td>@user.UserId</td>
                     <td>@user.Name</td>
                     <td>@user.LastName</td>
                     <td>@user.Email</td>
