@@ -4,6 +4,9 @@ using ReconocimientoFacialServer.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Agregar servicios
+builder.Services.AddScoped<FaceRecognizerService>();
+
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor()

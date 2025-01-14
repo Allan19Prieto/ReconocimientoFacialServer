@@ -10,6 +10,15 @@ async function startCamera(videoElementId) {
     console.log("Cámara iniciada correctamente.");
     await video.play();
 }
+
+function stopCamera(videoElementId) {
+    const video = document.getElementById(videoElementId);
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+}
+
 async function captureImage(videoElementId, canvasElementId) {
     try {
         const video = document.getElementById(videoElementId);

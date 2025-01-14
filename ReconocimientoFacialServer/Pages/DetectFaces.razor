@@ -1,0 +1,137 @@
+﻿@page "/detect-faces"
+
+@using Emgu.CV;
+@using Emgu.CV.Structure;
+@using ReconocimientoFacialServer.Services;
+@using SkiaSharp;
+@inject FaceRecognizerService FaceRecognizerService;
+@inject IJSRuntime JSRuntime;
+
+<h3>Detección y Reconocimiento Facial</h3>
+
+<div>
+    <video id="cameraPreview" autoplay style="border: 1px solid black; width: 400px; height: 300px;"></video>
+    <canvas id="canvasElement" style="display: none;"></canvas>
+
+    <button @onclick="StartCamera">Iniciar Cámara</button>
+    <button @onclick="CapturePhoto">Tomar Foto</button>
+</div>
+
+@if (ImagePreview != null)
+{
+    <h4>Foto Capturada:</h4>
+    <img src="@ImagePreview" alt="Foto capturada" style="max-width: 400px;" />
+}
+
+@if (RecognitionResult != null)
+{
+    <h4>Resultado del Reconocimiento:</h4>
+    <p>@RecognitionResult</p>
+}
+
+@code {
+    private string? ImagePreview;
+    private string? RecognitionResult;
+
+    private async Task StartCamera()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("startCamera", "cameraPreview");
+            RecognitionResult = "Cámara iniciada correctamente.";
+        }
+        catch (Exception ex)
+        {
+            RecognitionResult = $"Error al iniciar la cámara: {ex.Message}";
+        }
+    }
+
+    private async Task CapturePhoto()
+    {
+        try
+        {
+            // Capturar imagen desde la cámara
+            var imageBase64 = await JSRuntime.InvokeAsync<string>("captureImage", "cameraPreview", "canvasElement");
+
+            // Convertir Base64 a SKBitmap
+            var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
+
+            // Detectar rostros en la imagen capturada
+            var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
+
+            if (detectedFaces.Length > 0)
+            {
+                // Recortar y redimensionar el primer rostro detectado
+                //var firstFace = detectedFaces[0];
+                //var croppedFace = CropFace(skBitmap, new SKRectI(firstFace.X, firstFace.Y, firstFace.Width, firstFace.Height));
+                //var resizedFace = ResizeBitmap(croppedFace, 100, 100);
+
+                var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
+                var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
+
+                // Convertir rostro recortado a Base64
+                ImagePreview = ConvertSkBitmapToBase64(resizedFace);
+
+                // Realizar reconocimiento facial
+                RecognitionResult = FaceRecognizerService.RecognizeFace(ImagePreview);
+            }
+            else
+            {
+                RecognitionResult = "No se detectaron rostros en la imagen.";
+            }
+        }
+        catch (Exception ex)
+        {
+            RecognitionResult = $"Error al capturar o procesar la imagen: {ex.Message}";
+        }
+    }
+
+    private bool IsBase64String(string base64)
+    {
+        Span<byte> buffer = new Span<byte>(new byte[base64.Length]);
+        return Convert.TryFromBase64String(base64, buffer, out _);
+    }
+
+    private SKBitmap ConvertBase64ToSkBitmap(string base64Image)
+    {
+        try
+        {
+            if (!IsBase64String(base64Image.Replace("data:image/png;base64,", "")))
+            {
+                throw new Exception("La cadena Base64 no es válida.");
+            }
+
+            var imageBytes = Convert.FromBase64String(base64Image.Replace("data:image/png;base64,", ""));
+            using var ms = new MemoryStream(imageBytes);
+            return SKBitmap.Decode(ms) ?? throw new Exception("No se pudo decodificar la imagen.");
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error al convertir Base64 a SKBitmap: {ex.Message}");
+        }
+    }
+
+
+    private SKBitmap CropFace(SKBitmap bitmap, SKRectI faceRect)
+    {
+        var croppedBitmap = new SKBitmap(faceRect.Width, faceRect.Height);
+        using var canvas = new SKCanvas(croppedBitmap);
+        canvas.DrawBitmap(bitmap, faceRect, new SKRect(0, 0, faceRect.Width, faceRect.Height));
+        return croppedBitmap;
+    }
+
+    private SKBitmap ResizeBitmap(SKBitmap bitmap, int width, int height)
+    {
+        var resizedBitmap = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(resizedBitmap);
+        canvas.DrawBitmap(bitmap, new SKRect(0, 0, bitmap.Width, bitmap.Height), new SKRect(0, 0, width, height));
+        return resizedBitmap;
+    }
+
+    private string ConvertSkBitmapToBase64(SKBitmap bitmap)
+    {
+        using var ms = new MemoryStream();
+        bitmap.Encode(ms, SKEncodedImageFormat.Png, 100); // Codifica como PNG
+        return $"data:image/png;base64,{Convert.ToBase64String(ms.ToArray())}";
+    }
+}
