@@ -3,11 +3,7 @@
 @using ReconocimientoFacialServer.Models
 @using ReconocimientoFacialServer.Services
 @using System.Data.SQLite;
-@using System.Drawing;
-@using Emgu.CV
-@using Emgu.CV.Structure
 @inject DatabaseHandler DatabaseHandler
-@inject NavigationManager NavigationManager
 @inject FaceRecognizerService FaceRecognizerService
 
 <h3>Entrenar Reconocedor</h3>
@@ -16,20 +12,46 @@
 
 <p>@StatusMessage</p>
 
+@if (IsLoading)
+{
+    <div class="sk-grid">
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+        <div class="sk-grid-cube"></div>
+    </div>
+}
+
 @code {
     private string StatusMessage;
+    private bool IsLoading = false; // Controla la visibilidad del spinner
 
     private async Task TrainRecognizerr()
     {
+        IsLoading = true; // Mostrar el spinner
+        StatusMessage = "Entrenando el modelo. Por favor, espere...";
         try
         {
-            var trainingImagesBase64 = new Dictionary<int, string>();
-            var labels = new Dictionary<int, string>();
+            // Diccionario para almacenar imágenes y etiquetas
+            var trainingImagesBase64 = new Dictionary<int, List<string>>();
+
+            //var labels = new Dictionary<int, string>();
 
             using var connection = DatabaseHandler.GetConnection();
             await connection.OpenAsync();
 
-            string query = "SELECT UserId, Image FROM Users WHERE Image IS NOT NULL";
+            // Consulta para obtener las imágenes de cada usuario
+            string query = @"
+                SELECT u.UserId, i.Image
+                FROM Users u
+                INNER JOIN UserImages i ON u.UserId = i.UserId
+                WHERE i.Image IS NOT NULL";
+
             using var command = new SQLiteCommand(query, connection);
 
             using var reader = await command.ExecuteReaderAsync();
@@ -41,18 +63,34 @@
                 // Convertir byte[] a Base64
                 string base64Image = Convert.ToBase64String(imageBytes);
 
-                trainingImagesBase64[userId] = base64Image;
-                labels[userId] = $"Usuario {userId}";
+                // Agrupar imágenes por usuario
+                if (!trainingImagesBase64.ContainsKey(userId))
+                {
+                    trainingImagesBase64[userId] = new List<string>();
+                }
+
+                trainingImagesBase64[userId].Add(base64Image);
+            }
+
+            if (trainingImagesBase64.Count == 0)
+            {
+                StatusMessage = "No hay datos suficientes para entrenar el modelo.";
+                return;
             }
 
             // Llamar al método TrainRecognizer con imágenes en Base64
-            FaceRecognizerService.TrainRecognizer(trainingImagesBase64, labels);
-
-            StatusMessage = "Modelo entrenado correctamente.";
+            FaceRecognizerService.TrainRecognizer(trainingImagesBase64);
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error durante el entrenamiento: {ex.Message}";
+        }
+        finally
+        {
+            await Task.Delay(3000); // Simular una operación larga
+
+            IsLoading = false; // Ocultar el spinner
+            StatusMessage = "Modelo entrenado correctamente.";
         }
     }
 

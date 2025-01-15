@@ -1,9 +1,18 @@
 ﻿@page "/"
+@namespace YourProject.Pages
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
 
-<PageTitle>Index</PageTitle>
+<h3>Bienvenido a la Página Principal</h3>
+<canvas id="neuronCanvas"></canvas>
 
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
-
-<SurveyPrompt Title="How is Blazor working for you?" />
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Llama al JavaScript para inicializar la animación
+            await JSRuntime.InvokeVoidAsync("initializeNeuronAnimation");
+        }
+    }
+}

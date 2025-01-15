@@ -23,18 +23,30 @@ namespace ReconocimientoFacialServer.Data
             using var connection = new SQLiteConnection(_connectionString);
             connection.Open();
 
-            string createTableQuery = @"
+            string createUsersTableQuery = @"
                 CREATE TABLE IF NOT EXISTS Users (
                     UserId INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
                     LastName TEXT NOT NULL,
                     Email TEXT NOT NULL,
-                    RegisteredDate DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    Image BLOB
+                    RegisteredDate DATETIME DEFAULT CURRENT_TIMESTAMP
                 );";
 
-            using var command = new SQLiteCommand(createTableQuery, connection);
-            command.ExecuteNonQuery();
+            string createUserImagesTableQuery = @"
+                CREATE TABLE IF NOT EXISTS UserImages (
+                    ImageId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    Image BLOB NOT NULL,
+                    LightingCondition TEXT NOT NULL,
+                    Expression TEXT NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(UserId) ON DELETE CASCADE
+                );";
+
+            using var usersCommand = new SQLiteCommand(createUsersTableQuery, connection);
+            usersCommand.ExecuteNonQuery();
+
+            using var imagesCommand = new SQLiteCommand(createUserImagesTableQuery, connection);
+            imagesCommand.ExecuteNonQuery();
 
         }
 
