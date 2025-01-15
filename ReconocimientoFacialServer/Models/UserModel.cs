@@ -7,7 +7,7 @@
         public string LastName { get; set; }
         public string Email { get; set; }
         public DateTime RegisteredDate { get; set; } = DateTime.Now;
-        public byte[] Image { get; set; }
+        public List<byte[]> Images { get; set; } = new();
 
     }
 }

@@ -26,25 +26,63 @@
 <div>
     <video id="videoElement" autoplay style="border: 1px solid black; width: 320px; height: 240px;"></video>
     <canvas id="canvasElement" style="display: none;" width="320" height="240"></canvas>
-    @if (!string.IsNullOrWhiteSpace(ImagePreview))
-    {
-        <img src="@ImagePreview" alt="Imagen Capturada" />
-    }
 </div>
+
+@if (CurrentStep < Steps.Count)
+{
+    <h4>@Steps[CurrentStep].Instruction</h4>
+    <button @onclick="StartCamera">Iniciar Cámara</button>
+    <button @onclick="CaptureStepImage">Capturar</button>
+}
+else
+{
+    <h4>Resumen de Imágenes Capturadas</h4>
+    <div>
+        @foreach (var image in CapturedImages)
+        {
+            <img src="@image.ImageBase64" alt="Captura" style="max-width: 100px; margin: 5px;" />
+            <p>Condición: @image.Condition | Expresión: @image.Expression</p>
+        }
+    </div>
+    <button @onclick="RegisterUser">Guardar Usuario</button>
+    <button @onclick="Reset">Reiniciar</button>
+}
 
 @if (!string.IsNullOrWhiteSpace(StatusMessage))
 {
-    <p>@StatusMessage</p>
+    <div style="color: @GetMessageColor(StatusMessage)">
+        <p>@StatusMessage</p>
+    </div>
 }
-
-<button @onclick="StartCamera">Iniciar Cámara</button>
-<button @onclick="CaptureImage">Capturar Imagen</button>
-<button @onclick="RegisterUser">Guardar Usuario</button>
 
 @code {
     private UserModel User = new();
-    private string? ImagePreview; // Imagen procesada para previsualización
-    private string? StatusMessage; // Mensajes para el usuario
+    private string? StatusMessage;
+    private int CurrentStep = 0;
+
+    private List<StepInstruction> Steps = new()
+    {
+        new StepInstruction { Instruction = "Mire hacia la cámara con luz normal.", Condition = "Luz normal", Expression = "Neutral" },
+        new StepInstruction { Instruction = "Sonría y mire hacia la cámara.", Condition = "Luz normal", Expression = "Sonrisa" },
+        new StepInstruction { Instruction = "Mire hacia la cámara con luz tenue.", Condition = "Luz baja", Expression = "Neutral" },
+        new StepInstruction { Instruction = "Sonría bajo luz tenue.", Condition = "Luz baja", Expression = "Sonrisa" }
+    };
+
+    private List<CapturedImage> CapturedImages = new();
+
+    private class StepInstruction
+    {
+        public string Instruction { get; set; } = string.Empty;
+        public string Condition { get; set; } = string.Empty;
+        public string Expression { get; set; } = string.Empty;
+    }
+
+    private class CapturedImage
+    {
+        public string ImageBase64 { get; set; } = string.Empty; // Imagen en formato Base64
+        public string Condition { get; set; } = string.Empty;  // Condición de iluminación (e.g., "Luz baja")
+        public string Expression { get; set; } = string.Empty; // Expresión facial (e.g., "Sonrisa")
+    }
 
     // Iniciar la cámara
     private async Task StartCamera()
@@ -61,34 +99,85 @@
     }
 
     // Capturar la imagen desde la cámara
-    private async Task CaptureImage()
+    private async Task CaptureStepImage()
     {
         try
         {
             // Capturar imagen desde el elemento de video
             var base64Image = await JSRuntime.InvokeAsync<string>("captureImage", "videoElement", "canvasElement");
 
-            // Convertir Base64 a SKBitmap para procesar
+            // Convertir Base64 a SKBitmap
             var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
 
-            // Detectar rostros en la imagen capturada
+            // Detectar rostros
             var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
 
             if (detectedFaces.Length > 0)
             {
-                // Recortar y redimensionar el primer rostro detectado
+                // Recortar y redimensionar el rostro
                 var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
                 var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
 
-                // Convertir el rostro redimensionado a Base64 para previsualización
-                ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
+                // Convertir rostro a Base64
+                //var faceBase64 = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
 
-                StatusMessage = "Rostro capturado correctamente.";
+                // Guardar imagen procesada en CapturedImages
+                CapturedImages.Add(new CapturedImage
+                    {
+                        ImageBase64 = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace),
+                        Condition = Steps[CurrentStep].Condition,
+                        Expression = Steps[CurrentStep].Expression
+                    });
+
+                // Actualizar el estado del paso
+                CurrentStep++;
+                if (CurrentStep < Steps.Count)
+                {
+                    StatusMessage = $"Siguiente paso: {Steps[CurrentStep].Instruction}";
+                }
+                else
+                {
+                    StatusMessage = "Todas las imágenes han sido capturadas. Listo para guardar.";
+                }
+
+                //StatusMessage = "Rostro capturado correctamente.";
             }
             else
             {
                 StatusMessage = "No se detectaron rostros en la imagen.";
             }
+
+            // CurrentStep++;
+            // if (CurrentStep < Steps.Count)
+            // {
+            //     StatusMessage = "Siguiente paso: " + Steps[CurrentStep].Instruction;
+            // }
+            // else
+            // {
+            //     StatusMessage = "Todas las imágenes han sido capturadas. Listo para guardar.";
+            // }
+
+            // // Convertir Base64 a SKBitmap para procesar
+            // var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
+
+            // // Detectar rostros en la imagen capturada
+            // var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
+
+            // if (detectedFaces.Length > 0)
+            // {
+            //     // Recortar y redimensionar el primer rostro detectado
+            //     var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
+            //     var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
+
+            //     // Convertir el rostro redimensionado a Base64 para previsualización
+            //     ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
+
+            //     StatusMessage = "Rostro capturado correctamente.";
+            // }
+            // else
+            // {
+            //     StatusMessage = "No se detectaron rostros en la imagen.";
+            // }
         }
         catch (Exception ex)
         {
@@ -99,41 +188,85 @@
     // Guardar usuario en la base de datos
     private async Task RegisterUser()
     {
-        if (string.IsNullOrWhiteSpace(ImagePreview))
+        if (string.IsNullOrWhiteSpace(User.Name) || string.IsNullOrWhiteSpace(User.LastName) || string.IsNullOrWhiteSpace(User.Email))
         {
-            StatusMessage = "Debe capturar un rostro antes de guardar.";
+            StatusMessage = "Por favor, Ingresar todos los datos";
+            return;
+        }
+
+        if (CapturedImages.Count == 0)
+        {
+            StatusMessage = "Debe capturar al menos una imagen antes de guardar.";
             return;
         }
 
         try
         {
             // Convertir la imagen de previsualización (Base64) a bytes
-            byte[] imageBytes = Convert.FromBase64String(ImagePreview.Replace("data:image/png;base64,", ""));
+            //byte[] imageBytes = Convert.FromBase64String(ImagePreview.Replace("data:image/png;base64,", ""));
 
             // Guardar usuario en la base de datos
             using var connection = DatabaseHandler.GetConnection();
             await connection.OpenAsync();
 
-            string query = @"
-                INSERT INTO Users (Name, LastName, Email, RegisteredDate, Image)
-                VALUES (@Name, @LastName, @Email, @RegisteredDate, @Image)";
-            using var command = new SQLiteCommand(query, connection);
+            string insertUserQuery = @"
+                INSERT INTO Users (Name, LastName, Email, RegisteredDate)
+                VALUES (@Name, @LastName, @Email, @RegisteredDate);
+                SELECT last_insert_rowid();";
 
-            command.Parameters.AddWithValue("@Name", User.Name);
-            command.Parameters.AddWithValue("@LastName", User.LastName);
-            command.Parameters.AddWithValue("@Email", User.Email);
-            command.Parameters.AddWithValue("@RegisteredDate", DateTime.Now);
-            command.Parameters.AddWithValue("@Image", imageBytes);
+            using var userCommand = new SQLiteCommand(insertUserQuery, connection);
+            userCommand.Parameters.AddWithValue("@Name", User.Name);
+            userCommand.Parameters.AddWithValue("@LastName", User.LastName);
+            userCommand.Parameters.AddWithValue("@Email", User.Email);
+            userCommand.Parameters.AddWithValue("@RegisteredDate", DateTime.Now);
 
-            await command.ExecuteNonQueryAsync();
+            var userId = (long)await userCommand.ExecuteScalarAsync();
 
-            StatusMessage = "Usuario registrado correctamente.";
-            User = new UserModel(); // Reinicia el formulario
-            ImagePreview = null;
+            // Insertar imágenes
+            foreach (var capturedImage in CapturedImages)
+            {
+                byte[] imageBytes = Convert.FromBase64String(capturedImage.ImageBase64.Replace("data:image/png;base64,", ""));
+
+                string insertImageQuery = @"
+                INSERT INTO UserImages (UserId, Image, LightingCondition, Expression)
+                VALUES (@UserId, @Image, @LightingCondition, @Expression)";
+
+                using var imageCommand = new SQLiteCommand(insertImageQuery, connection);
+                imageCommand.Parameters.AddWithValue("@UserId", userId);
+                imageCommand.Parameters.AddWithValue("@Image", imageBytes);
+                imageCommand.Parameters.AddWithValue("@LightingCondition", capturedImage.Condition);
+                imageCommand.Parameters.AddWithValue("@Expression", capturedImage.Expression);
+
+                await imageCommand.ExecuteNonQueryAsync();
+            }
+
+            StatusMessage = "Usuario y sus imágenes registrados correctamente.";
+            Reset();
+
+            // StatusMessage = "Usuario registrado correctamente.";
+            // User = new UserModel(); // Reinicia el formulario
+            // ImagePreview = null;
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error al guardar el usuario: {ex.Message}";
         }
+    }
+    private void CancelRegistration()
+    {
+        Reset(); // Reiniciar el formulario si el usuario cancela
+    }
+
+    private void Reset()
+    {
+        User = new UserModel();
+        CapturedImages.Clear();
+        CurrentStep = 0;
+        StatusMessage = "Formulario reiniciado. Listo para capturar nuevas imágenes.";
+    }
+
+    private string GetMessageColor(string message)
+    {
+        return message.StartsWith("Error") ? "red" : "green";
     }
 }

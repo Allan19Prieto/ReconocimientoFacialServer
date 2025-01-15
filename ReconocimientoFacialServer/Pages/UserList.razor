@@ -4,7 +4,6 @@
 @using System.Data.SQLite;
 @inject DatabaseHandler DatabaseHandler
 
-
 <h3>Lista de Usuarios</h3>
 
 @if (Users == null)
@@ -17,32 +16,35 @@ else if (Users.Count == 0)
 }
 else
 {
-    <table>
+    <table style="border-collapse: collapse; width: 100%; text-align: left;">
         <thead>
             <tr>
-                <th>Id</th>
-                <th>Nombre</th>
-                <th>Apellido</th>
-                <th>Email</th>
-                <th>Imagen</th>
+                <th style="border: 1px solid black; padding: 8px;">Id</th>
+                <th style="border: 1px solid black; padding: 8px;">Nombre</th>
+                <th style="border: 1px solid black; padding: 8px;">Apellido</th>
+                <th style="border: 1px solid black; padding: 8px;">Email</th>
+                <th style="border: 1px solid black; padding: 8px;">Imágenes</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var user in Users)
             {
                 <tr>
-                    <td>@user.UserId</td>
-                    <td>@user.Name</td>
-                    <td>@user.LastName</td>
-                    <td>@user.Email</td>
-                    <td>
-                        @if (user.Image != null)
+                    <td style="border: 1px solid black; padding: 8px;">@user.UserId</td>
+                    <td style="border: 1px solid black; padding: 8px;">@user.Name</td>
+                    <td style="border: 1px solid black; padding: 8px;">@user.LastName</td>
+                    <td style="border: 1px solid black; padding: 8px;">@user.Email</td>
+                    <td style="border: 1px solid black; padding: 8px;">
+                        @if (user.Images != null && user.Images.Count > 0)
                         {
-                            <img src="data:image/png;base64,@Convert.ToBase64String(user.Image)" alt="Imagen de Usuario" width="100" />
+                            @foreach (var image in user.Images)
+                            {
+                                <img src="data:image/png;base64,@Convert.ToBase64String(image)" alt="Imagen de Usuario" style="width: 100px; height: auto; margin: 5px;" />
+                            }
                         }
                         else
                         {
-                            <span>Sin imagen</span>
+                            <span>Sin imágenes</span>
                         }
                     </td>
                 </tr>
@@ -68,21 +70,56 @@ else
         using var connection = DatabaseHandler.GetConnection();
         await connection.OpenAsync();
 
-        string query = "SELECT UserId, Name, LastName, Email, Image FROM Users";
-        using var command = new SQLiteCommand(query, connection);
+        string query = @"
+        SELECT
+            u.UserId, u.Name, u.LastName, u.Email, i.Image
+        FROM
+            Users u
+        LEFT JOIN
+            UserImages i ON u.UserId = i.UserId";
 
+        using var command = new SQLiteCommand(query, connection);
         using var reader = await command.ExecuteReaderAsync();
+
+        var userDictionary = new Dictionary<int, UserModel>();
+
         while (await reader.ReadAsync())
         {
-            Users.Add(new UserModel
+            int userId = reader.GetInt32(0);
+
+            // Si el usuario ya está en el diccionario, solo agrega la imagen
+            if (userDictionary.ContainsKey(userId))
+            {
+                var image = reader["Image"] as byte[];
+                if (image != null)
                 {
-                    UserId = reader.GetInt32(0),
-                    Name = reader.GetString(1),
-                    LastName = reader.GetString(2),
-                    Email = reader.GetString(3),
-                    Image = reader["Image"] as byte[]
-                });
+                    userDictionary[userId].Images.Add(image);
+                }
+            }
+            else
+            {
+                // Crear un nuevo usuario
+                var user = new UserModel
+                    {
+                        UserId = userId,
+                        Name = reader.GetString(1),
+                        LastName = reader.GetString(2),
+                        Email = reader.GetString(3)
+                    };
+
+                // Agregar la primera imagen, si existe
+                var image = reader["Image"] as byte[];
+                if (image != null)
+                {
+                    user.Images.Add(image);
+                }
+
+                userDictionary[userId] = user;
+            }
         }
+
+        Users = userDictionary.Values.ToList();
     }
+
 
 }
