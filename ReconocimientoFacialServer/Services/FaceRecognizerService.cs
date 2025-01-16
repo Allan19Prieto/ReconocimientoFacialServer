@@ -68,7 +68,7 @@ namespace ReconocimientoFacialServer.Services
 
                 var result = _recognizer.Predict(resizedImage);
 
-                double threshold = 3900; // Determina este valor experimentalmente
+                double threshold = 4000; // Determina este valor experimentalmente
                 if (result.Label == -1 || result.Distance > threshold)
                 {
                     return "Usuario desconocido";
@@ -234,6 +234,182 @@ namespace ReconocimientoFacialServer.Services
         //        Console.WriteLine($"Error durante el entrenamiento: {ex.Message}");
         //    }
         //}
+
+        public bool DetectBlink(Mat frame)
+        {
+            // Cargar Haar Cascade para detección de ojos
+            string basePath = AppContext.BaseDirectory;
+            string eyeCascadePath = Path.Combine(basePath, "wwwroot", "models", "haarcascade_eye.xml");
+
+            if (!File.Exists(eyeCascadePath))
+            {
+                throw new FileNotFoundException($"El archivo del modelo no se encontró en {eyeCascadePath}");
+            }
+            var eyeCascade = new CascadeClassifier(eyeCascadePath);
+
+            // Convertir frame a escala de grises
+            var grayFrame = new Mat();
+            CvInvoke.CvtColor(frame, grayFrame, ColorConversion.Bgr2Gray);
+
+            // Detectar ojos
+            var eyes = eyeCascade.DetectMultiScale(grayFrame, 1.1, 5, new Size(20, 20), Size.Empty);
+
+            // Si se detectan ojos, se asume que no hay parpadeo
+            return eyes.Length >= 2;
+        }
+
+        public async Task<bool> VerifyBlinkAsync(string base64Image)
+        {
+            var matImage = ConvertBase64ToMat(base64Image);
+
+            // Verificar si se detecta parpadeo
+            return DetectBlink(matImage);
+        }
+
+        // Algoritmo para aplicar LBP
+        private Mat ApplyLBP(Mat grayImage)
+        {
+            // Validar que la imagen esté en escala de grises
+            if (grayImage.NumberOfChannels != 1)
+            {
+                throw new ArgumentException("La imagen debe estar en escala de grises.");
+            }
+
+            // Crear una nueva imagen para almacenar el resultado
+            var lbpImage = new Mat(grayImage.Rows, grayImage.Cols, Emgu.CV.CvEnum.DepthType.Cv8U, 1);
+
+            // Obtener punteros a los datos
+            unsafe
+            {
+                byte* srcPtr = (byte*)grayImage.DataPointer;
+                byte* destPtr = (byte*)lbpImage.DataPointer;
+
+                int step = grayImage.Step; // Longitud de cada fila en bytes
+
+                // Aplicar LBP píxel por píxel (evitar los bordes)
+                for (int y = 1; y < grayImage.Rows - 1; y++)
+                {
+                    for (int x = 1; x < grayImage.Cols - 1; x++)
+                    {
+                        byte center = *(srcPtr + y * step + x);
+                        byte code = 0;
+
+                        // Comparar con los píxeles vecinos
+                        code |= (byte)((*(srcPtr + (y - 1) * step + (x - 1)) >= center ? 1 : 0) << 7);
+                        code |= (byte)((*(srcPtr + (y - 1) * step + x) >= center ? 1 : 0) << 6);
+                        code |= (byte)((*(srcPtr + (y - 1) * step + (x + 1)) >= center ? 1 : 0) << 5);
+                        code |= (byte)((*(srcPtr + y * step + (x + 1)) >= center ? 1 : 0) << 4);
+                        code |= (byte)((*(srcPtr + (y + 1) * step + (x + 1)) >= center ? 1 : 0) << 3);
+                        code |= (byte)((*(srcPtr + (y + 1) * step + x) >= center ? 1 : 0) << 2);
+                        code |= (byte)((*(srcPtr + (y + 1) * step + (x - 1)) >= center ? 1 : 0) << 1);
+                        code |= (byte)((*(srcPtr + y * step + (x - 1)) >= center ? 1 : 0) << 0);
+
+                        // Asignar el valor al píxel LBP
+                        *(destPtr + y * step + x) = code;
+                    }
+                }
+            }
+
+            return lbpImage;
+        }
+
+        public bool AnalyzeTexture(Mat frame)
+        {
+            // Convertir a escala de grises si es necesario
+            if (frame.NumberOfChannels != 1)
+            {
+                var grayFrame = new Mat();
+                CvInvoke.CvtColor(frame, grayFrame, ColorConversion.Bgr2Gray);
+                frame = grayFrame;
+            }
+
+            // Aplicar LBP
+            var lbpImage = ApplyLBP(frame);
+
+            // Crear histograma
+            var histogram = new DenseHistogram(256, new RangeF(0, 256));
+
+            // Evaluar la uniformidad de las texturas
+            var uniformity = CalculateUniformity(histogram, lbpImage);
+            return uniformity > 0.5; // Ajusta el umbral según tus necesidades
+        }
+
+
+
+        private double CalculateUniformity(DenseHistogram histogram, Mat lbpImage)
+        {
+            // Validar que la imagen LBP sea válida y de un canal
+            if (lbpImage.NumberOfChannels != 1)
+            {
+                throw new ArgumentException("La imagen LBP debe ser de un solo canal.");
+            }
+
+            // Crear máscara vacía (opcional)
+            using var mask = new Mat();
+
+            // Convertir Mat a Image<Gray, byte> para compatibilidad con DenseHistogram
+            using var grayImage = lbpImage.ToImage<Gray, byte>();
+
+            // Calcular el histograma
+            histogram.Calculate<byte>(new Image<Gray, byte>[] { grayImage }, false, null);
+
+            // Copiar los valores del histograma a un arreglo
+            var bins = new float[256];
+            histogram.CopyTo(bins);
+
+            // Calcular la uniformidad
+            double uniformity = 0.0;
+            foreach (var bin in bins)
+            {
+                uniformity += Math.Pow(bin, 2);
+            }
+
+            return uniformity;
+        }
+
+
+        public async Task<bool> VerifyLivenessAsync(string base64Image)
+        {
+            var matImage = ConvertBase64ToMat(base64Image);
+
+            // Verificar parpadeo y texturas
+            bool isBlinkDetected = DetectBlink(matImage);
+            bool isTextureValid = AnalyzeTexture(matImage);
+
+            return isBlinkDetected && isTextureValid;
+        }
+
+        public Mat ConvertBase64ToMat(string base64Image)
+        {
+            try
+            {
+                // Eliminar el prefijo Base64 si está presente
+                if (base64Image.StartsWith("data:image"))
+                {
+                    base64Image = base64Image.Substring(base64Image.IndexOf(",") + 1);
+                }
+
+                // Convertir Base64 a un arreglo de bytes
+                byte[] imageBytes = Convert.FromBase64String(base64Image);
+
+                // Decodificar los bytes en un SKBitmap usando SkiaSharp
+                using var ms = new MemoryStream(imageBytes);
+                var skBitmap = SKBitmap.Decode(ms) ?? throw new Exception("No se pudo decodificar la imagen Base64.");
+
+                // Convertir SKBitmap a Mat
+                var mat = new Mat(skBitmap.Height, skBitmap.Width, Emgu.CV.CvEnum.DepthType.Cv8U, 3);
+
+                // Rellenar los datos del Mat con los bytes del SKBitmap
+                var pixels = skBitmap.Pixels.SelectMany(color => new[] { color.Red, color.Green, color.Blue }).ToArray();
+                mat.SetTo(pixels);
+
+                return mat;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error al convertir Base64 a Mat: {ex.Message}", ex);
+            }
+        }
 
         public Mat ConvertBitmapToMat(Bitmap bitmap)
         {

@@ -1,16 +1,14 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Remove="wwwroot\models\haarcascade_frontalface_default.xml" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <!-- Referencias a paquetes NuGet -->
     <PackageReference Include="Emgu.CV" Version="4.5.0" />
     <PackageReference Include="Emgu.CV.Bitmap" Version="4.5.0" />
     <PackageReference Include="Emgu.CV.runtime.windows" Version="4.5.0" />
@@ -23,14 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="wwwroot\models\haarcascade_frontalface_default.xml" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="wwwroot\models\haarcascade_frontalface_default.xml">
+    <Content Update="wwwroot\models\haarcascade_eye.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\models\haarcascade_frontalface_default.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-
 
 </Project>

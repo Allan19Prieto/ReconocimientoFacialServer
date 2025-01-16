@@ -23,6 +23,12 @@
     <img src="@ImagePreview" alt="Foto capturada" style="max-width: 400px;" />
 }
 
+@if (LivenessMessage != null)
+{
+    <h4>Verificación de Vida:</h4>
+    <p>@LivenessMessage</p>
+}
+
 @if (RecognitionResult != null)
 {
     <h4>Resultado del Reconocimiento:</h4>
@@ -32,13 +38,13 @@
 @code {
     private string? ImagePreview;
     private string? RecognitionResult;
+    private string? LivenessMessage;
 
     private async Task StartCamera()
     {
         try
         {
             await JSRuntime.InvokeVoidAsync("startCamera", "cameraPreview");
-            RecognitionResult = "Cámara iniciada correctamente.";
         }
         catch (Exception ex)
         {
@@ -53,33 +59,48 @@
             // Capturar imagen desde la cámara
             var imageBase64 = await JSRuntime.InvokeAsync<string>("captureImage", "cameraPreview", "canvasElement");
 
-            // Convertir Base64 a SKBitmap
-            var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
+            // Verificar autenticidad (Liveness Detection)
+            bool isAlive = await FaceRecognizerService.VerifyLivenessAsync(imageBase64);
 
-            // Detectar rostros en la imagen capturada
-            var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
-
-            if (detectedFaces.Length > 0)
+            if (!isAlive)
             {
-                // Recortar y redimensionar el primer rostro detectado
-                //var firstFace = detectedFaces[0];
-                //var croppedFace = CropFace(skBitmap, new SKRectI(firstFace.X, firstFace.Y, firstFace.Width, firstFace.Height));
-                //var resizedFace = ResizeBitmap(croppedFace, 100, 100);
-
-                var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
-                var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
-
-                // Convertir rostro recortado a Base64
-                //ImagePreview = ConvertSkBitmapToBase64(resizedFace);
-                ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
-
-                // Realizar reconocimiento facial
-                RecognitionResult = FaceRecognizerService.RecognizeFace(ImagePreview);
+                LivenessMessage = "No se detectó vida. Por favor, intente nuevamente.";
+                return;
             }
-            else
-            {
-                RecognitionResult = "No se detectaron rostros en la imagen.";
-            }
+
+            LivenessMessage = "Verificación de vida exitosa.";
+
+            // Reconocimiento facial
+            RecognitionResult = FaceRecognizerService.RecognizeFace(imageBase64);
+            ImagePreview = imageBase64;
+
+            // // Convertir Base64 a SKBitmap
+            // var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
+
+            // // Detectar rostros en la imagen capturada
+            // var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
+
+            // if (detectedFaces.Length > 0)
+            // {
+            //     // Recortar y redimensionar el primer rostro detectado
+            //     //var firstFace = detectedFaces[0];
+            //     //var croppedFace = CropFace(skBitmap, new SKRectI(firstFace.X, firstFace.Y, firstFace.Width, firstFace.Height));
+            //     //var resizedFace = ResizeBitmap(croppedFace, 100, 100);
+
+            //     var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
+            //     var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
+
+            //     // Convertir rostro recortado a Base64
+            //     //ImagePreview = ConvertSkBitmapToBase64(resizedFace);
+            //     ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
+
+            //     // Realizar reconocimiento facial
+            //     RecognitionResult = FaceRecognizerService.RecognizeFace(ImagePreview);
+            // }
+            // else
+            // {
+            //     RecognitionResult = "No se detectaron rostros en la imagen.";
+            // }
         }
         catch (Exception ex)
         {
