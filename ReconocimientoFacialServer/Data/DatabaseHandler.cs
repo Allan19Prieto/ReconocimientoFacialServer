@@ -27,8 +27,6 @@ namespace ReconocimientoFacialServer.Data
                 CREATE TABLE IF NOT EXISTS Users (
                     UserId INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
-                    LastName TEXT NOT NULL,
-                    Email TEXT NOT NULL,
                     RegisteredDate DATETIME DEFAULT CURRENT_TIMESTAMP
                 );";
 
@@ -42,11 +40,22 @@ namespace ReconocimientoFacialServer.Data
                     FOREIGN KEY (UserId) REFERENCES Users(UserId) ON DELETE CASCADE
                 );";
 
+            string createDescriptorsTableQuery = @"
+                CREATE TABLE IF NOT EXISTS FaceDescriptors (
+                    DescriptorId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    Descriptor BLOB NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(UserId) ON DELETE CASCADE
+                );";
+
             using var usersCommand = new SQLiteCommand(createUsersTableQuery, connection);
             usersCommand.ExecuteNonQuery();
 
             using var imagesCommand = new SQLiteCommand(createUserImagesTableQuery, connection);
             imagesCommand.ExecuteNonQuery();
+
+            using var descriptorCommand = new SQLiteCommand(createDescriptorsTableQuery, connection);
+            descriptorCommand.ExecuteNonQuery();
 
         }
 

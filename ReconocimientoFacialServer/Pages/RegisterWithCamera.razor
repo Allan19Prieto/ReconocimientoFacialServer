@@ -3,24 +3,17 @@
 @using ReconocimientoFacialServer.Data
 @using ReconocimientoFacialServer.Models
 @using ReconocimientoFacialServer.Services
+@using SkiaSharp;
+@using System.Drawing;
+@using System.Text.Json;
 @inject DatabaseHandler DatabaseHandler
 @inject FaceRecognizerService FaceRecognizerService
-@inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
 
-<h3>Registrar Usuario con Cámara</h3>
-
+<h3>Registro de Usuario</h3>
 <div>
     <label>Nombre:</label>
-    <input @bind="User.Name" />
-</div>
-<div>
-    <label>Apellido:</label>
-    <input @bind="User.LastName" />
-</div>
-<div>
-    <label>Email:</label>
-    <input @bind="User.Email" />
+    <input @bind="UserName" />
 </div>
 
 <div>
@@ -28,37 +21,45 @@
     <canvas id="canvasElement" style="display: none;" width="320" height="240"></canvas>
 </div>
 
-@if (CurrentStep < Steps.Count)
+<button @onclick="StartCamera">Iniciar Cámara</button>
+<button @onclick="CaptureImage" disabled="@(string.IsNullOrWhiteSpace(UserName))">Capturar Imagen</button>
+
+@if (Steps.Count > CurrentStep)
 {
-    <h4>@Steps[CurrentStep].Instruction</h4>
-    <button @onclick="StartCamera">Iniciar Cámara</button>
-    <button @onclick="CaptureStepImage">Capturar</button>
+    <p><strong>Paso Actual:</strong> @Steps[CurrentStep].Instruction</p>
 }
-else
+
+@if (CapturedImages.Any())
 {
-    <h4>Resumen de Imágenes Capturadas</h4>
-    <div>
+    <h4>Imágenes Capturadas:</h4>
+    <div style="display: flex; flex-wrap: wrap;">
         @foreach (var image in CapturedImages)
         {
-            <img src="@image.ImageBase64" alt="Captura" style="max-width: 100px; margin: 5px;" />
-            <p>Condición: @image.Condition | Expresión: @image.Expression</p>
+            <div style="margin: 5px;">
+                <img src="@image.ImageBase64" style="width: 100px; height: 100px; border: 1px solid black;" />
+                <p>@image.Condition - @image.Expression</p>
+            </div>
         }
     </div>
-    <button @onclick="RegisterUser">Guardar Usuario</button>
-    <button @onclick="Reset">Reiniciar</button>
+
+    <h4>Descriptores Generados:</h4>
+    <pre>@JsonSerializer.Serialize(CapturedDescriptors, new JsonSerializerOptions { WriteIndented = true })</pre>
 }
 
-@if (!string.IsNullOrWhiteSpace(StatusMessage))
-{
-    <div style="color: @GetMessageColor(StatusMessage)">
-        <p>@StatusMessage</p>
-    </div>
-}
+<button @onclick="RegisterUser" disabled="@(CapturedImages.Count < Steps.Count)">Registrar Usuario</button>
+
+
+<p style="color: @(ErrorMessage != null ? "red" : "green")">@ErrorMessage</p>
+
 
 @code {
-    private UserModel User = new();
-    private string? StatusMessage;
+    //private UserModel User = new();
+    private string? UserName;
+    private string? ErrorMessage;
+
     private int CurrentStep = 0;
+    private List<CapturedImage> CapturedImages = new();
+    private List<float[]> CapturedDescriptors = new();
 
     private List<StepInstruction> Steps = new()
     {
@@ -68,7 +69,12 @@ else
         new StepInstruction { Instruction = "Sonría bajo luz tenue.", Condition = "Luz baja", Expression = "Sonrisa" }
     };
 
-    private List<CapturedImage> CapturedImages = new();
+    private class CapturedImage
+    {
+        public string ImageBase64 { get; set; } = string.Empty;
+        public string Condition { get; set; } = string.Empty;
+        public string Expression { get; set; } = string.Empty;
+    }
 
     private class StepInstruction
     {
@@ -77,181 +83,140 @@ else
         public string Expression { get; set; } = string.Empty;
     }
 
-    private class CapturedImage
-    {
-        public string ImageBase64 { get; set; } = string.Empty; // Imagen en formato Base64
-        public string Condition { get; set; } = string.Empty;  // Condición de iluminación (e.g., "Luz baja")
-        public string Expression { get; set; } = string.Empty; // Expresión facial (e.g., "Sonrisa")
-    }
-
     // Iniciar la cámara
     private async Task StartCamera()
     {
         try
         {
             await JSRuntime.InvokeVoidAsync("startCamera", "videoElement");
-            StatusMessage = "Cámara iniciada correctamente.";
+            ErrorMessage = "Cámara iniciada correctamente.";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error al iniciar la cámara: {ex.Message}";
+            ErrorMessage = $"Error al iniciar la cámara: {ex.Message}";
         }
     }
 
-    // Capturar la imagen desde la cámara
-    private async Task CaptureStepImage()
+    private async Task CaptureImage()
     {
+        if (CurrentStep >= Steps.Count)
+        {
+            ErrorMessage = "Todos los pasos han sido completados.";
+            return;
+        }
+
         try
         {
-            // Capturar imagen desde el elemento de video
+            // Capturar imagen desde el video
             var base64Image = await JSRuntime.InvokeAsync<string>("captureImage", "videoElement", "canvasElement");
 
-            // Convertir Base64 a SKBitmap
-            var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
+            // Convertir Base64 a Dlib Matrix
+            var imageMatrix = FaceRecognizerService.ConvertBase64ToMatrix(base64Image);
 
             // Detectar rostros
-            var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
-
-            if (detectedFaces.Length > 0)
+            var faces = FaceRecognizerService.DetectFaces(imageMatrix);
+            if (!faces.Any())
             {
-                // Recortar y redimensionar el rostro
-                var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
-                var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
-
-                // Convertir rostro a Base64
-                //var faceBase64 = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
-
-                // Guardar imagen procesada en CapturedImages
-                CapturedImages.Add(new CapturedImage
-                    {
-                        ImageBase64 = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace),
-                        Condition = Steps[CurrentStep].Condition,
-                        Expression = Steps[CurrentStep].Expression
-                    });
-
-                // Actualizar el estado del paso
-                CurrentStep++;
-                if (CurrentStep < Steps.Count)
-                {
-                    StatusMessage = $"Siguiente paso: {Steps[CurrentStep].Instruction}";
-                }
-                else
-                {
-                    StatusMessage = "Todas las imágenes han sido capturadas. Listo para guardar.";
-                }
-
-                //StatusMessage = "Rostro capturado correctamente.";
-            }
-            else
-            {
-                StatusMessage = "No se detectaron rostros en la imagen.";
+                ErrorMessage = "No se detectó ningún rostro.";
+                return;
             }
 
-            // CurrentStep++;
-            // if (CurrentStep < Steps.Count)
-            // {
-            //     StatusMessage = "Siguiente paso: " + Steps[CurrentStep].Instruction;
-            // }
-            // else
-            // {
-            //     StatusMessage = "Todas las imágenes han sido capturadas. Listo para guardar.";
-            // }
+            // Calcular descriptor para el primer rostro detectado
+            var descriptors = FaceRecognizerService.ComputeDescriptors(imageMatrix, faces).FirstOrDefault();
+            if (descriptors == null)
+            {
+                ErrorMessage = "No se pudo generar el descriptor del rostro.";
+                return;
+            }
 
-            // // Convertir Base64 a SKBitmap para procesar
-            // var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
+            // Guardar la imagen y el descriptor
+            CapturedImages.Add(new CapturedImage
+                {
+                    ImageBase64 = base64Image,
+                    Condition = Steps[CurrentStep].Condition,
+                    Expression = Steps[CurrentStep].Expression
+                });
+            CapturedDescriptors.Add(descriptors);
 
-            // // Detectar rostros en la imagen capturada
-            // var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
-
-            // if (detectedFaces.Length > 0)
-            // {
-            //     // Recortar y redimensionar el primer rostro detectado
-            //     var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
-            //     var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
-
-            //     // Convertir el rostro redimensionado a Base64 para previsualización
-            //     ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
-
-            //     StatusMessage = "Rostro capturado correctamente.";
-            // }
-            // else
-            // {
-            //     StatusMessage = "No se detectaron rostros en la imagen.";
-            // }
+            ErrorMessage = null; // Limpiar errores
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error al capturar la imagen: {ex.Message}";
+            ErrorMessage = $"Error al capturar la imagen: {ex.Message}";
         }
     }
 
-    // Guardar usuario en la base de datos
     private async Task RegisterUser()
     {
-        if (string.IsNullOrWhiteSpace(User.Name) || string.IsNullOrWhiteSpace(User.LastName) || string.IsNullOrWhiteSpace(User.Email))
+        if (string.IsNullOrWhiteSpace(UserName))
         {
-            StatusMessage = "Por favor, Ingresar todos los datos";
-            return;
-        }
-
-        if (CapturedImages.Count == 0)
-        {
-            StatusMessage = "Debe capturar al menos una imagen antes de guardar.";
+            ErrorMessage = "El nombre del usuario es obligatorio.";
             return;
         }
 
         try
         {
-            // Convertir la imagen de previsualización (Base64) a bytes
-            //byte[] imageBytes = Convert.FromBase64String(ImagePreview.Replace("data:image/png;base64,", ""));
-
-            // Guardar usuario en la base de datos
             using var connection = DatabaseHandler.GetConnection();
             await connection.OpenAsync();
 
-            string insertUserQuery = @"
-                INSERT INTO Users (Name, LastName, Email, RegisteredDate)
-                VALUES (@Name, @LastName, @Email, @RegisteredDate);
-                SELECT last_insert_rowid();";
-
+            // Insertar usuario
+            string insertUserQuery = @"INSERT INTO Users (Name, RegisteredDate) VALUES (@Name, @RegisteredDate); SELECT last_insert_rowid();";
             using var userCommand = new SQLiteCommand(insertUserQuery, connection);
-            userCommand.Parameters.AddWithValue("@Name", User.Name);
-            userCommand.Parameters.AddWithValue("@LastName", User.LastName);
-            userCommand.Parameters.AddWithValue("@Email", User.Email);
+            userCommand.Parameters.AddWithValue("@Name", UserName);
             userCommand.Parameters.AddWithValue("@RegisteredDate", DateTime.Now);
-
             var userId = (long)await userCommand.ExecuteScalarAsync();
 
-            // Insertar imágenes
-            foreach (var capturedImage in CapturedImages)
+            // Insertar imágenes y descriptores
+            foreach (var (image, descriptor) in CapturedImages.Zip(CapturedDescriptors, (img, desc) => (img, desc)))
             {
-                byte[] imageBytes = Convert.FromBase64String(capturedImage.ImageBase64.Replace("data:image/png;base64,", ""));
+                byte[] imageBytes = Convert.FromBase64String(image.ImageBase64.Replace("data:image/png;base64,", ""));
+                byte[] descriptorBytes = JsonSerializer.SerializeToUtf8Bytes(descriptor);
 
-                string insertImageQuery = @"
-                INSERT INTO UserImages (UserId, Image, LightingCondition, Expression)
-                VALUES (@UserId, @Image, @LightingCondition, @Expression)";
-
+                string insertImageQuery = @"INSERT INTO UserImages (UserId, Image, LightingCondition, Expression) VALUES (@UserId, @Image, @Condition, @Expression);";
                 using var imageCommand = new SQLiteCommand(insertImageQuery, connection);
                 imageCommand.Parameters.AddWithValue("@UserId", userId);
                 imageCommand.Parameters.AddWithValue("@Image", imageBytes);
-                imageCommand.Parameters.AddWithValue("@LightingCondition", capturedImage.Condition);
-                imageCommand.Parameters.AddWithValue("@Expression", capturedImage.Expression);
-
+                imageCommand.Parameters.AddWithValue("@Condition", image.Condition);
+                imageCommand.Parameters.AddWithValue("@Expression", image.Expression);
                 await imageCommand.ExecuteNonQueryAsync();
+
+                string insertDescriptorQuery = @"INSERT INTO FaceDescriptors (UserId, Descriptor) VALUES (@UserId, @Descriptor);";
+                using var descriptorCommand = new SQLiteCommand(insertDescriptorQuery, connection);
+                descriptorCommand.Parameters.AddWithValue("@UserId", userId);
+                descriptorCommand.Parameters.AddWithValue("@Descriptor", descriptorBytes);
+                await descriptorCommand.ExecuteNonQueryAsync();
             }
 
-            StatusMessage = "Usuario y sus imágenes registrados correctamente.";
+            ErrorMessage = "Usuario registrado correctamente.";
             Reset();
-
-            // StatusMessage = "Usuario registrado correctamente.";
-            // User = new UserModel(); // Reinicia el formulario
-            // ImagePreview = null;
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error al guardar el usuario: {ex.Message}";
+            ErrorMessage = $"Error al registrar al usuario: {ex.Message}";
         }
     }
+
+
+
+    
+   
+    private void SaveDescriptorToDatabase(double[] descriptor)
+    {
+        using var connection = DatabaseHandler.GetConnection();
+        connection.Open();
+
+        string query = @"
+            INSERT INTO FaceDescriptors (UserId, Descriptor)
+            VALUES (@UserId, @Descriptor);";
+
+        using var command = new SQLiteCommand(query, connection);
+        command.Parameters.AddWithValue("@UserId", 1); // Reemplaza con el ID del usuario actual
+        command.Parameters.AddWithValue("@Descriptor", descriptor);
+
+        command.ExecuteNonQuery();
+    }
+
+ 
     private void CancelRegistration()
     {
         Reset(); // Reiniciar el formulario si el usuario cancela
@@ -259,10 +224,10 @@ else
 
     private void Reset()
     {
-        User = new UserModel();
+        UserName = null;
         CapturedImages.Clear();
+        CapturedDescriptors.Clear();
         CurrentStep = 0;
-        StatusMessage = "Formulario reiniciado. Listo para capturar nuevas imágenes.";
     }
 
     private string GetMessageColor(string message)

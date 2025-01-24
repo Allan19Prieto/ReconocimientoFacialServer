@@ -21,8 +21,7 @@ else
             <tr>
                 <th style="border: 1px solid black; padding: 8px;">Id</th>
                 <th style="border: 1px solid black; padding: 8px;">Nombre</th>
-                <th style="border: 1px solid black; padding: 8px;">Apellido</th>
-                <th style="border: 1px solid black; padding: 8px;">Email</th>
+                <th style="border: 1px solid black; padding: 8px;">Fecha de Registro</th>
                 <th style="border: 1px solid black; padding: 8px;">Imágenes</th>
             </tr>
         </thead>
@@ -32,8 +31,7 @@ else
                 <tr>
                     <td style="border: 1px solid black; padding: 8px;">@user.UserId</td>
                     <td style="border: 1px solid black; padding: 8px;">@user.Name</td>
-                    <td style="border: 1px solid black; padding: 8px;">@user.LastName</td>
-                    <td style="border: 1px solid black; padding: 8px;">@user.Email</td>
+                    <td style="border: 1px solid black; padding: 8px;">@user.RegisteredDate.ToString("dd/MM/yyyy")</td>
                     <td style="border: 1px solid black; padding: 8px;">
                         @if (user.Images != null && user.Images.Count > 0)
                         {
@@ -72,7 +70,7 @@ else
 
         string query = @"
         SELECT
-            u.UserId, u.Name, u.LastName, u.Email, i.Image
+            u.UserId, u.Name, u.RegisteredDate, i.Image
         FROM
             Users u
         LEFT JOIN
@@ -103,8 +101,8 @@ else
                     {
                         UserId = userId,
                         Name = reader.GetString(1),
-                        LastName = reader.GetString(2),
-                        Email = reader.GetString(3)
+                        RegisteredDate = reader.GetDateTime(2),
+                        Images = new List<byte[]>()
                     };
 
                 // Agregar la primera imagen, si existe
@@ -120,6 +118,5 @@ else
 
         Users = userDictionary.Values.ToList();
     }
-
 
 }
