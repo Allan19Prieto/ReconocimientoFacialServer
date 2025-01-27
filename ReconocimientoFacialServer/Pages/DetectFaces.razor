@@ -1,9 +1,10 @@
-﻿@page "/detect-faces"
+﻿@* @page "/detect-faces"
 
 @using Emgu.CV;
 @using Emgu.CV.Structure;
 @using ReconocimientoFacialServer.Services;
 @using SkiaSharp;
+@using System.Drawing
 @inject FaceRecognizerService FaceRecognizerService;
 @inject IJSRuntime JSRuntime;
 
@@ -35,10 +36,22 @@
     <p>@RecognitionResult</p>
 }
 
+
+<div style="position: relative; display: inline-block;">
+    <video id="videoElement" autoplay style="border: 1px solid black; width: 320px; height: 240px;"></video>
+    <canvas id="canvasElement" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+</div>
+<p>@RecognitionResult</p>
+
+<button @onclick="StartVideo">Iniciar Video</button>
+<button @onclick="StopVideo">Detener Video</button>
+
 @code {
     private string? ImagePreview;
-    private string? RecognitionResult;
+    // string? RecognitionResult;
     private string? LivenessMessage;
+
+    private string RecognitionResult = "Esperando...";
 
     private async Task StartCamera()
     {
@@ -50,6 +63,17 @@
         {
             RecognitionResult = $"Error al iniciar la cámara: {ex.Message}";
         }
+    }
+
+    private async Task StartVideo()
+    {
+        await JSRuntime.InvokeVoidAsync("startVideoStream", "videoElement");
+        await JSRuntime.InvokeVoidAsync("processVideoFrame", "videoElement", "canvasElement", DotNetObjectReference.Create(this));
+    }
+
+    private async Task StopVideo()
+    {
+        await JSRuntime.InvokeVoidAsync("stopVideoStream", "videoElement");
     }
 
     private async Task CapturePhoto()
@@ -123,4 +147,80 @@
         canvas.DrawBitmap(bitmap, new SKRect(0, 0, bitmap.Width, bitmap.Height), new SKRect(0, 0, width, height));
         return resizedBitmap;
     }
+
+    private bool IsBase64String(string base64)
+    {
+        Span<byte> buffer = new Span<byte>(new byte[base64.Length]);
+        return Convert.TryFromBase64String(base64, buffer, out _);
+    }
+
+    [JSInvokable]
+    public async Task ProcessFrame(string base64Image)
+    {
+        try
+        {
+            // Convertir Base64 a Mat para procesar
+            var matImage = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
+
+            //var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
+
+            // Detectar y reconocer rostros
+            var detectedFaces = FaceRecognizerService.DetectFaces(matImage);
+            if (detectedFaces.Length > 0)
+            {
+                var croppedFace = FaceRecognizerService.CropFace(matImage, detectedFaces[0]);
+                var maptoSk = FaceRecognizerService.ConvertSkBitmapToMat(croppedFace);
+                RecognitionResult = FaceRecognizerService.RecognizeFace(FaceRecognizerService.ConvertMatToBase64(maptoSk));
+            }
+            else
+            {
+                RecognitionResult = "No se detectaron rostros.";
+            }
+        }
+        catch (Exception ex)
+        {
+            RecognitionResult = $"Error: {ex.Message}";
+        }
+    }
+
+    public class Rectangle
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+    }
+
+    [JSInvokable("ProcessFaces")]
+    public List<Rectangle> ProcessFaces(string base64Image)
+    {
+        try
+        {
+            // Convertir la imagen Base64 a Mat
+            var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
+            //var matImage = FaceRecognizerService.ConvertSkBitmapToMat(skBitmap);
+
+            // Detectar rostros usando Haar Cascade
+            var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
+
+            // Convertir Rectangles a un formato serializable
+            return detectedFaces.Select(face => new Rectangle
+                {
+                    X = face.X,
+                    Y = face.Y,
+                    Width = face.Width,
+                    Height = face.Height
+                }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al detectar rostros: {ex.Message}");
+            return new List<Rectangle>();
+        }
+    }
+
+    
+
+
 }
+ *@

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <!-- Referencias a paquetes NuGet -->
+    <PackageReference Include="DlibDotNet" Version="19.21.0.20220724" />
     <PackageReference Include="Emgu.CV" Version="4.5.0" />
     <PackageReference Include="Emgu.CV.Bitmap" Version="4.5.0" />
     <PackageReference Include="Emgu.CV.runtime.windows" Version="4.5.0" />
@@ -21,10 +22,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Update="wwwroot\models\dlib_face_recognition_resnet_model_v1.dat">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Update="wwwroot\models\haarcascade_eye.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Update="wwwroot\models\haarcascade_frontalface_default.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\models\shape_predictor_68_face_landmarks.dat">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
