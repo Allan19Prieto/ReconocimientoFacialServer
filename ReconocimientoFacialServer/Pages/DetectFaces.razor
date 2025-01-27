@@ -1,181 +1,99 @@
-﻿@* @page "/detect-faces"
-
-@using Emgu.CV;
-@using Emgu.CV.Structure;
+﻿@page "/detect-faces"
+@using System.Data.SQLite;
 @using ReconocimientoFacialServer.Services;
-@using SkiaSharp;
-@using System.Drawing
+@using ReconocimientoFacialServer.Data;
+@using ReconocimientoFacialServer.Models;
 @inject FaceRecognizerService FaceRecognizerService;
+@inject DatabaseHandler DatabaseHandler;
 @inject IJSRuntime JSRuntime;
 
-<h3>Detección y Reconocimiento Facial</h3>
+<h3>Prueba de Reconocimiento Facial</h3>
 
 <div>
-    <video id="cameraPreview" autoplay style="border: 1px solid black; width: 400px; height: 300px;"></video>
-    <canvas id="canvasElement" style="display: none;"></canvas>
-
-    <button @onclick="StartCamera">Iniciar Cámara</button>
-    <button @onclick="CapturePhoto">Tomar Foto</button>
-</div>
-
-@if (ImagePreview != null)
-{
-    <h4>Foto Capturada:</h4>
-    <img src="@ImagePreview" alt="Foto capturada" style="max-width: 400px;" />
-}
-
-@if (LivenessMessage != null)
-{
-    <h4>Verificación de Vida:</h4>
-    <p>@LivenessMessage</p>
-}
-
-@if (RecognitionResult != null)
-{
-    <h4>Resultado del Reconocimiento:</h4>
-    <p>@RecognitionResult</p>
-}
-
-
-<div style="position: relative; display: inline-block;">
     <video id="videoElement" autoplay style="border: 1px solid black; width: 320px; height: 240px;"></video>
-    <canvas id="canvasElement" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <canvas id="canvasElement" style="display: none;" width="320" height="240"></canvas>
 </div>
-<p>@RecognitionResult</p>
 
-<button @onclick="StartVideo">Iniciar Video</button>
-<button @onclick="StopVideo">Detener Video</button>
+<p>@RecognitionResult</p>
+<button @onclick="StartCamera">Iniciar Cámara</button>
+<button @onclick="CaptureAndCompare">Capturar y Comparar</button>
 
 @code {
-    private string? ImagePreview;
-    // string? RecognitionResult;
-    private string? LivenessMessage;
-
     private string RecognitionResult = "Esperando...";
+    private Dictionary<int, UserDescriptorModel> UserDescriptors = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserDescriptors();
+    }
 
     private async Task StartCamera()
     {
+        await JSRuntime.InvokeVoidAsync("startCamera", "videoElement");
+    }
+
+    private async Task LoadUserDescriptors()
+    {
         try
         {
-            await JSRuntime.InvokeVoidAsync("startCamera", "cameraPreview");
+            using var connection = DatabaseHandler.GetConnection();
+            await connection.OpenAsync();
+
+            string query = "SELECT UserId, Name, Descriptor FROM FaceDescriptors INNER JOIN Users ON FaceDescriptors.UserId = Users.UserId;";
+            using var command = new SQLiteCommand(query, connection);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var userId = reader.GetInt32(0);
+                var userName = reader.GetString(1);
+                var descriptorBlob = (byte[])reader["Descriptor"];
+                var descriptor = ConvertBlobToFloatArray(descriptorBlob);
+
+                UserDescriptors[userId] = new UserDescriptorModel
+                    {
+                        UserId = userId,
+                        Name = userName,
+                        Descriptor = descriptor
+                    };
+            }
         }
         catch (Exception ex)
         {
-            RecognitionResult = $"Error al iniciar la cámara: {ex.Message}";
+            Console.WriteLine($"Error al cargar descriptores: {ex.Message}");
         }
     }
 
-    private async Task StartVideo()
-    {
-        await JSRuntime.InvokeVoidAsync("startVideoStream", "videoElement");
-        await JSRuntime.InvokeVoidAsync("processVideoFrame", "videoElement", "canvasElement", DotNetObjectReference.Create(this));
-    }
-
-    private async Task StopVideo()
-    {
-        await JSRuntime.InvokeVoidAsync("stopVideoStream", "videoElement");
-    }
-
-    private async Task CapturePhoto()
+    private async Task CaptureAndCompare()
     {
         try
         {
             // Capturar imagen desde la cámara
-            var imageBase64 = await JSRuntime.InvokeAsync<string>("captureImage", "cameraPreview", "canvasElement");
+            var base64Image = await JSRuntime.InvokeAsync<string>("captureImage", "videoElement", "canvasElement");
 
-            // Verificar autenticidad (Liveness Detection)
-            bool isAlive = await FaceRecognizerService.VerifyLivenessAsync(imageBase64);
+            // Convertir imagen a Matrix y calcular descriptores
+            var imageMatrix = FaceRecognizerService.ConvertBase64ToMatrix(base64Image);
+            var detectedFaces = FaceRecognizerService.DetectFaces(imageMatrix);
 
-            if (!isAlive)
+            if (!detectedFaces.Any())
             {
-                LivenessMessage = "No se detectó vida. Por favor, intente nuevamente.";
+                RecognitionResult = "No se detectaron rostros.";
                 return;
             }
 
-            LivenessMessage = "Verificación de vida exitosa.";
-
-            // Reconocimiento facial
-            RecognitionResult = FaceRecognizerService.RecognizeFace(imageBase64);
-            ImagePreview = imageBase64;
-
-            // // Convertir Base64 a SKBitmap
-            // var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
-
-            // // Detectar rostros en la imagen capturada
-            // var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
-
-            // if (detectedFaces.Length > 0)
-            // {
-            //     // Recortar y redimensionar el primer rostro detectado
-            //     //var firstFace = detectedFaces[0];
-            //     //var croppedFace = CropFace(skBitmap, new SKRectI(firstFace.X, firstFace.Y, firstFace.Width, firstFace.Height));
-            //     //var resizedFace = ResizeBitmap(croppedFace, 100, 100);
-
-            //     var croppedFace = FaceRecognizerService.CropFace(skBitmap, detectedFaces[0]);
-            //     var resizedFace = FaceRecognizerService.ResizeBitmap(croppedFace, 100, 100);
-
-            //     // Convertir rostro recortado a Base64
-            //     //ImagePreview = ConvertSkBitmapToBase64(resizedFace);
-            //     ImagePreview = FaceRecognizerService.ConvertSkBitmapToBase64(resizedFace);
-
-            //     // Realizar reconocimiento facial
-            //     RecognitionResult = FaceRecognizerService.RecognizeFace(ImagePreview);
-            // }
-            // else
-            // {
-            //     RecognitionResult = "No se detectaron rostros en la imagen.";
-            // }
-        }
-        catch (Exception ex)
-        {
-            RecognitionResult = $"Error al capturar o procesar la imagen: {ex.Message}";
-        }
-    }
-
-    private SKBitmap CropFace(SKBitmap bitmap, SKRectI faceRect)
-    {
-        var croppedBitmap = new SKBitmap(faceRect.Width, faceRect.Height);
-        using var canvas = new SKCanvas(croppedBitmap);
-        canvas.DrawBitmap(bitmap, faceRect, new SKRect(0, 0, faceRect.Width, faceRect.Height));
-        return croppedBitmap;
-    }
-
-    private SKBitmap ResizeBitmap(SKBitmap bitmap, int width, int height)
-    {
-        var resizedBitmap = new SKBitmap(width, height);
-        using var canvas = new SKCanvas(resizedBitmap);
-        canvas.DrawBitmap(bitmap, new SKRect(0, 0, bitmap.Width, bitmap.Height), new SKRect(0, 0, width, height));
-        return resizedBitmap;
-    }
-
-    private bool IsBase64String(string base64)
-    {
-        Span<byte> buffer = new Span<byte>(new byte[base64.Length]);
-        return Convert.TryFromBase64String(base64, buffer, out _);
-    }
-
-    [JSInvokable]
-    public async Task ProcessFrame(string base64Image)
-    {
-        try
-        {
-            // Convertir Base64 a Mat para procesar
-            var matImage = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
-
-            //var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(imageBase64);
-
-            // Detectar y reconocer rostros
-            var detectedFaces = FaceRecognizerService.DetectFaces(matImage);
-            if (detectedFaces.Length > 0)
+            var capturedDescriptor = FaceRecognizerService.ComputeDescriptors(imageMatrix, detectedFaces).FirstOrDefault();
+            if (capturedDescriptor == null)
             {
-                var croppedFace = FaceRecognizerService.CropFace(matImage, detectedFaces[0]);
-                var maptoSk = FaceRecognizerService.ConvertSkBitmapToMat(croppedFace);
-                RecognitionResult = FaceRecognizerService.RecognizeFace(FaceRecognizerService.ConvertMatToBase64(maptoSk));
+                RecognitionResult = "No se pudo generar el descriptor del rostro.";
+                return;
             }
-            else
-            {
-                RecognitionResult = "No se detectaron rostros.";
-            }
+
+            // Comparar el descriptor capturado con los almacenados
+            var matchedUser = CompareWithStoredDescriptors(capturedDescriptor);
+
+            RecognitionResult = matchedUser != null
+                ? $"Usuario reconocido: {matchedUser.Name}"
+                : "Usuario no reconocido.";
         }
         catch (Exception ex)
         {
@@ -183,44 +101,39 @@
         }
     }
 
-    public class Rectangle
+    private UserDescriptorModel? CompareWithStoredDescriptors(float[] capturedDescriptor)
     {
-        public int X { get; set; }
-        public int Y { get; set; }
-        public int Width { get; set; }
-        public int Height { get; set; }
+        double minDistance = double.MaxValue;
+        UserDescriptorModel? matchedUser = null;
+
+        foreach (var user in UserDescriptors.Values)
+        {
+            double distance = FaceRecognizerService.ComputeDistance(capturedDescriptor, user.Descriptor);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                matchedUser = user;
+            }
+        }
+
+        // Determinar si el usuario fue identificado dentro de un umbral
+        return minDistance < 1.0 ? matchedUser : null;
     }
 
-    [JSInvokable("ProcessFaces")]
-    public List<Rectangle> ProcessFaces(string base64Image)
+    private float[] ConvertBlobToFloatArray(byte[] blob)
     {
-        try
-        {
-            // Convertir la imagen Base64 a Mat
-            var skBitmap = FaceRecognizerService.ConvertBase64ToSkBitmap(base64Image);
-            //var matImage = FaceRecognizerService.ConvertSkBitmapToMat(skBitmap);
+        if (blob.Length % sizeof(float) != 0)
+            throw new ArgumentException("El tamaño del blob no es válido para un array de floats.");
 
-            // Detectar rostros usando Haar Cascade
-            var detectedFaces = FaceRecognizerService.DetectFaces(skBitmap);
-
-            // Convertir Rectangles a un formato serializable
-            return detectedFaces.Select(face => new Rectangle
-                {
-                    X = face.X,
-                    Y = face.Y,
-                    Width = face.Width,
-                    Height = face.Height
-                }).ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error al detectar rostros: {ex.Message}");
-            return new List<Rectangle>();
-        }
+        var floatArray = new float[blob.Length / sizeof(float)];
+        Buffer.BlockCopy(blob, 0, floatArray, 0, blob.Length);
+        return floatArray;
     }
 
-    
-
-
+    public class UserDescriptorModel
+    {
+        public int UserId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public float[] Descriptor { get; set; } = Array.Empty<float>();
+    }
 }
- *@

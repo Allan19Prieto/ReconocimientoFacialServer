@@ -146,6 +146,14 @@
         }
     }
 
+    private byte[] ConvertFloatArrayToBlob(float[] floatArray)
+    {
+        var byteArray = new byte[floatArray.Length * sizeof(float)];
+        Buffer.BlockCopy(floatArray, 0, byteArray, 0, byteArray.Length);
+        return byteArray;
+    }
+
+
     private async Task RegisterUser()
     {
         if (string.IsNullOrWhiteSpace(UserName))
@@ -170,8 +178,9 @@
             foreach (var (image, descriptor) in CapturedImages.Zip(CapturedDescriptors, (img, desc) => (img, desc)))
             {
                 byte[] imageBytes = Convert.FromBase64String(image.ImageBase64.Replace("data:image/png;base64,", ""));
-                byte[] descriptorBytes = JsonSerializer.SerializeToUtf8Bytes(descriptor);
+                byte[] descriptorBytes = ConvertFloatArrayToBlob(descriptor); // Usar la nueva función
 
+                // Guardar la imagen
                 string insertImageQuery = @"INSERT INTO UserImages (UserId, Image, LightingCondition, Expression) VALUES (@UserId, @Image, @Condition, @Expression);";
                 using var imageCommand = new SQLiteCommand(insertImageQuery, connection);
                 imageCommand.Parameters.AddWithValue("@UserId", userId);
@@ -180,10 +189,11 @@
                 imageCommand.Parameters.AddWithValue("@Expression", image.Expression);
                 await imageCommand.ExecuteNonQueryAsync();
 
+                // Guardar el descriptor
                 string insertDescriptorQuery = @"INSERT INTO FaceDescriptors (UserId, Descriptor) VALUES (@UserId, @Descriptor);";
                 using var descriptorCommand = new SQLiteCommand(insertDescriptorQuery, connection);
                 descriptorCommand.Parameters.AddWithValue("@UserId", userId);
-                descriptorCommand.Parameters.AddWithValue("@Descriptor", descriptorBytes);
+                descriptorCommand.Parameters.AddWithValue("@Descriptor", descriptorBytes); // Guardar como BLOB
                 await descriptorCommand.ExecuteNonQueryAsync();
             }
 
@@ -196,10 +206,6 @@
         }
     }
 
-
-
-    
-   
     private void SaveDescriptorToDatabase(double[] descriptor)
     {
         using var connection = DatabaseHandler.GetConnection();
@@ -216,7 +222,6 @@
         command.ExecuteNonQuery();
     }
 
- 
     private void CancelRegistration()
     {
         Reset(); // Reiniciar el formulario si el usuario cancela

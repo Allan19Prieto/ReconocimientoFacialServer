@@ -66,6 +66,8 @@ function stopVideoStream(videoElementId) {
     }
 }
 
+//let isProcessing = false; // Asegúrate de que esté declarado en un ámbito adecuado.
+
 async function processVideoFrame(videoElementId, canvasElementId, dotNetInstance) {
     try {
         const videoElement = document.getElementById(videoElementId);
@@ -77,9 +79,9 @@ async function processVideoFrame(videoElementId, canvasElementId, dotNetInstance
             return;
         }
 
-        // Configurar dimensiones del canvas
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
+        // Ajustar dimensiones dinámicamente
+        canvasElement.width =  160;
+        canvasElement.height = 120;
 
         if (isProcessing) return; // Evita procesamientos simultáneos
         isProcessing = true;
@@ -92,34 +94,33 @@ async function processVideoFrame(videoElementId, canvasElementId, dotNetInstance
 
         // Llamar al backend para detectar rostros
         const detectedFaces = await dotNetInstance.invokeMethodAsync("ProcessFaces", imageData);
-        console.log("Detected Faces:", detectedFaces);
-
+        console.debug("Detected Faces:", detectedFaces);
 
         // Dibujar los cuadros verdes alrededor de los rostros detectados
-        if (Array.isArray(detectedFaces)) {
+        if (Array.isArray(detectedFaces) && detectedFaces.length > 0) {
             context.clearRect(0, 0, canvasElement.width, canvasElement.height); // Limpia el canvas
 
             context.lineWidth = 2;
             context.strokeStyle = "green";
 
             detectedFaces.forEach(face => {
-                const scaleX = canvasElement.width / videoElement.videoWidth;
-                const scaleY = canvasElement.height / videoElement.videoHeight;
+                const scaleX = canvasElement.width / 160;
+                const scaleY = canvasElement.height / 160;
 
                 const rectX = face.x * scaleX;
                 const rectY = face.y * scaleY;
                 const rectWidth = face.width * scaleX;
                 const rectHeight = face.height * scaleY;
 
-                console.log(`Dibujando rectángulo: x=${rectX}, y=${rectY}, w=${rectWidth}, h=${rectHeight}`);
                 context.strokeRect(rectX, rectY, rectWidth, rectHeight);
             });
+        } else {
+            console.warn("No se detectaron rostros.");
         }
-
 
         isProcessing = false;
 
-        // Procesar el siguiente fotograma después de 500 ms
+        // Procesar el siguiente fotograma después de un retraso dinámico
         setTimeout(() => processVideoFrame(videoElementId, canvasElementId, dotNetInstance), 500);
     } catch (error) {
         isProcessing = false;
